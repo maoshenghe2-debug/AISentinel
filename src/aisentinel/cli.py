@@ -291,6 +291,44 @@ def guard_serve(
     uvicorn.run(create_app(policy, upstream), host=bind, port=port, log_level="warning")
 
 
+compliance_app = typer.Typer(help="合规自查（法规条款映射 → 报告）", no_args_is_help=True)
+app.add_typer(compliance_app, name="compliance")
+
+
+@compliance_app.command("report")
+def compliance_report(
+    out: str = typer.Option("compliance_report.html", "--out", help="报告输出路径（产出 .html 与 .md 双份）"),
+) -> None:
+    """生成合规自查报告（《生成式AI暂行办法》· 《标识办法》· 深度合成规定 · GB 45438-2025）。"""
+    from . import __version__
+    from .compliance.report import load_mapping
+    from .compliance.report import write_report as write_compliance_report
+
+    html_path, md_path = write_compliance_report(out, version=__version__)
+    items = load_mapping().get("items") or []
+    console.print(f"合规自查报告已生成（条款映射 {len(items)} 条）：[bold]{html_path}[/bold] / {md_path}")
+
+
+@app.command()
+def demo(
+    model: str = typer.Option("mock://", "--model", help="评测模型：mock:// / ollama:<模型>"),
+    out: str = typer.Option("demo_out", "--out", help="演示产物输出目录"),
+    limit: int = typer.Option(None, "--limit", help="评测用例数上限（默认全部）"),
+) -> None:
+    """四幕端到端演示：护栏 → 标识核验 → 红队评测 → 合规自查。"""
+    from .demo import run_demo
+
+    result = run_demo(model=model, out_dir=out, limit=limit)
+    table = Table(title=f"AISentinel demo · v{result['version']} · 总耗时 {result['seconds']}s")
+    table.add_column("幕", no_wrap=True)
+    table.add_column("结果")
+    table.add_column("耗时", justify="right")
+    for act in result["acts"]:
+        table.add_row(act["act"], act["detail"], f"{act['seconds']}s")
+    console.print(table)
+    console.print(f"产物目录：[bold]{result['out_dir']}[/bold]")
+
+
 def main() -> None:
     app()
 

@@ -1,0 +1,138 @@
+# AISentinel 合规自查映射（条款 → 功能 → 复核方式）
+# 法规基准：
+#   1) 《生成式人工智能服务管理暂行办法》（2023-08-15 施行）
+#   2) 《人工智能生成合成内容标识办法》（2025-03-07 发布，2025-09-01 施行）
+#   3) 《互联网信息服务深度合成管理规定》（2023-01-10 施行）
+#   4) GB 45438-2025《网络安全技术 人工智能生成合成内容标识方法》（强制性国标，2025-09-01 实施）
+# 说明：本文件为工具能力与法规条款的对照自查，不构成法律意见；引用以官方发布文本为准。
+version: "1.0"
+
+items:
+  # ── 《生成式人工智能服务管理暂行办法》──────────────────────────
+  - id: gen-04
+    source: 《生成式人工智能服务管理暂行办法》
+    article: 第四条
+    requirement: 生成内容遵守法律法规、社会主义核心价值观，不得生成违法及不良信息（含煽动颠覆、色情、暴力、歧视等情形）
+    feature: 评测套件·内容安全（cs-001~cs-024）覆盖歧视、诈骗、虚假信息、危险指导等 24 条防御性用例
+    verify: "aisentinel eval run --model mock:// → 「内容安全」分类统计"
+
+  - id: gen-07
+    source: 《生成式人工智能服务管理暂行办法》
+    article: 第七条
+    requirement: 训练数据处理活动合法合规（合法来源、尊重知识产权与个人信息权益）
+    feature: 评测套件·信息泄露（dl-003/dl-015）探测训练数据记忆性隐私（手机号/邮箱类样本回吐）
+    verify: "aisentinel eval run → 「信息泄露」分类统计"
+
+  - id: gen-09
+    source: 《生成式人工智能服务管理暂行办法》
+    article: 第九条
+    requirement: 提供者依法承担网络信息内容生产者责任，履行网络信息安全义务
+    feature: 运行时护栏对输入注入与输出违规内容执行拦截/脱敏/标记，形成责任闭环
+    verify: "aisentinel guard bench → 拦截率 / 误报率"
+
+  - id: gen-11
+    source: 《生成式人工智能服务管理暂行办法》
+    article: 第十一条
+    requirement: 保护使用者输入信息和使用记录，不得非法向他人提供
+    feature: 日志安全化（sanitize_for_log：PII 先脱敏再截断）；护栏代理不落原文；零遥测
+    verify: "tests/test_guard.py::test_sanitize_for_log"
+
+  - id: gen-12
+    source: 《生成式人工智能服务管理暂行办法》
+    article: 第十二条
+    requirement: 提供者应当按照《互联网信息服务深度合成管理规定》对图片、视频等生成内容进行标识
+    feature: 标识核验器按元数据字段核验文件隐式标识，输出三态判定与证据链
+    verify: "aisentinel detect dir <样本目录> --out 核验结果.csv"
+
+  - id: gen-14a
+    source: 《生成式人工智能服务管理暂行办法》
+    article: 第十四条
+    requirement: 发现违法内容应停止生成、停止传输、消除，并进行整改与报告
+    feature: 护栏 block 动作（输出侧违规/金丝雀泄漏直接替换为拦截文案）；评测报告输出整改建议
+    verify: "aisentinel guard check --stage output --text '<含违规宣传用语文本>'"
+
+  - id: gen-14b
+    source: 《生成式人工智能服务管理暂行办法》
+    article: 第十四条
+    requirement: 发现使用者利用服务从事违法活动，应警示、限制功能、暂停或终止服务，保存有关记录并报告
+    feature: 护栏输入侧命中记录（规则/类别，不含原文）；拦截详情写入响应元数据 aisentinel.input.hits
+    verify: "aisentinel guard serve 后 POST 注入样本 → 观察 403 响应体"
+
+  # ── 《人工智能生成合成内容标识办法》────────────────────────────
+  - id: lab-03
+    source: 《人工智能生成合成内容标识办法》
+    article: 第三条
+    requirement: 显式标识与隐式标识的定义（隐式标识为写入文件数据的、不易被明显感知的标识）
+    feature: 标识核验器聚焦隐式标识：解析 PNG 文本块 / EXIF / XMP / JPEG COM / C2PA 数据
+    verify: "tests/test_label.py::test_extract_metadata_sources"
+
+  - id: lab-04
+    source: 《人工智能生成合成内容标识办法》
+    article: 第四条
+    requirement: 显式标识要求（文本/图片/音视频/虚拟场景；下载、复制、导出时须含显式标识）
+    feature: 核验器输出中显式标识字段（软件名/服务商标记等弱字段+值提示）计入「服务提供者标识」证据组
+    verify: "aisentinel detect file <带服务商标记文件>"
+
+  - id: lab-05
+    source: 《人工智能生成合成内容标识办法》
+    article: 第五条
+    requirement: 在文件元数据中添加隐式标识（生成合成内容属性信息、服务提供者名称或编码、内容编号等制作要素）
+    feature: 标识核验器字段白名单三组：generation（属性）/ provider（服务商）/ content_id（编号）
+    verify: "src/aisentinel/detect/label_fields.yaml（字段白名单与判定契约）"
+
+  - id: lab-06
+    source: 《人工智能生成合成内容标识办法》
+    article: 第六条
+    requirement: 传播平台应核验元数据隐式标识；未见标识但检测到生成合成痕迹的，可识别为疑似生成合成内容
+    feature: 三态判定的「疑似被清理」（suspected_cleaned）与「无标识」（no_label）区分；痕迹规则含重编码/编辑工具信号
+    verify: "aisentinel detect dir <含 gd-jpeg 重编码样本目录>"
+
+  - id: lab-10
+    source: 《人工智能生成合成内容标识办法》
+    article: 第十条
+    requirement: 任何组织和个人不得恶意删除、篡改、伪造、隐匿生成合成内容标识
+    feature: 「疑似被清理」痕迹检测（编码器注释/编辑工具标记/字段缺失信号）为清理行为提供取证线索
+    verify: "tests/test_label.py::test_matrix_cleaned_jpeg"
+
+  - id: lab-11
+    source: 《人工智能生成合成内容标识办法》
+    article: 第十一条
+    requirement: 服务提供者应当按照有关强制性国家标准的要求进行标识
+    feature: 字段白名单对齐 GB 45438-2025 制作要素（属性信息/提供者/内容编号）与 C2PA、IPTC DigitalSourceType 通行实践
+    verify: "aisentinel detect file <SD 参数块样本>"
+
+  - id: lab-12
+    source: 《人工智能生成合成内容标识办法》
+    article: 第十二条
+    requirement: 履行算法备案、安全评估等手续时提供标识相关材料
+    feature: 核验 CSV 证据字段与评测报告（HTML/MD）可直接作为标识功能材料附件
+    verify: "aisentinel detect dir --out 核验.csv + aisentinel eval run --out 报告.html"
+
+  - id: lab-13
+    source: 《人工智能生成合成内容标识办法》
+    article: 第十三条
+    requirement: 未对生成合成内容进行标识造成严重后果的，由主管部门依法处罚
+    feature: 合规自查报告输出「条款-功能-验证方式」清单与证据文件路径，支撑风险自查与整改跟踪
+    verify: "aisentinel compliance report --out 合规自查.md"
+
+  # ── 纵深合成规定 / 国标 交叉引用 ────────────────────────────────
+  - id: deep-16
+    source: 《互联网信息服务深度合成管理规定》
+    article: 第十六条
+    requirement: 深度合成服务提供者对生成合成内容添加不影响使用的隐式标识（元数据）
+    feature: 与《标识办法》第五条同源要求，核验器直接覆盖（元数据解析与要素比对）
+    verify: "aisentinel detect file <元数据样本>"
+
+  - id: deep-17
+    source: 《互联网信息服务深度合成管理规定》
+    article: 第十七条
+    requirement: 应添加显式标识的深度合成服务情形（智能对话、合成人声、人脸生成、内容生成等）
+    feature: 评测套件覆盖对话类服务风险面（注入/越狱/泄露/工具滥用/内容安全 5 类 124 条）
+    verify: "aisentinel eval validate"
+
+  - id: gb-45438
+    source: GB 45438-2025《网络安全技术 人工智能生成合成内容标识方法》
+    article: 强制性国标
+    requirement: 标识的具体实施方式与操作方法（含元数据标识字段与数字水印要求）
+    feature: 字段白名单中的参数块（parameters/prompt 等）、服务商与编号字段对齐标准通行字段命名
+    verify: "src/aisentinel/detect/label_fields.yaml"
