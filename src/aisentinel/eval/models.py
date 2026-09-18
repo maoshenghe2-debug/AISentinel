@@ -35,11 +35,12 @@ class MockAdapter:
 class OllamaAdapter:
     """本机 Ollama（/api/chat）。"""
 
-    def __init__(self, model: str = "gemma4:12b", timeout: int = 180, temperature: float = 0.2):
+    def __init__(self, model: str = "gemma4:12b", timeout: int = 600, temperature: float = 0.2, num_predict: int = 256):
         self.model = model
         self.name = f"ollama:{model}"
         self.timeout = timeout
         self.temperature = temperature
+        self.num_predict = num_predict
 
     def generate(self, prompt: str, case_id: str = "") -> str:
         resp = httpx.post(
@@ -48,7 +49,7 @@ class OllamaAdapter:
                 "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
-                "options": {"temperature": self.temperature},
+                "options": {"temperature": self.temperature, "num_predict": self.num_predict},
             },
             timeout=self.timeout,
             trust_env=False,

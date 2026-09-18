@@ -120,18 +120,27 @@ def check_ollama(probe: bool = True) -> Check:
 
 def check_suite() -> Check:
     suite_dir = Path(__file__).parent / "eval" / "suites"
-    count = len(list(suite_dir.rglob("*.yaml"))) if suite_dir.is_dir() else 0
+    count = 0
+    if suite_dir.is_dir():
+        import yaml
+
+        for path in suite_dir.rglob("*.yaml"):
+            try:
+                doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            count += len(doc.get("cases") or [])
     if count == 0:
         return Check(
             key="suite",
             name="评测用例库",
             status=STATUS_WARN,
-            detail="用例库未就绪（0 个文件）",
-            fix="评测用例库随 v0.1.0 S2 交付；可先运行 detect / guard 功能",
+            detail="用例库未就绪（0 条用例）",
+            fix="评测用例库随 v0.1.0 交付；可先运行 detect / guard 功能",
         )
     if count < MIN_CASES:
-        return Check(key="suite", name="评测用例库", status=STATUS_WARN, detail=f"用例文件 {count} 个（目标 ≥{MIN_CASES} 条用例）")
-    return Check(key="suite", name="评测用例库", status=STATUS_OK, detail=f"用例文件 {count} 个")
+        return Check(key="suite", name="评测用例库", status=STATUS_WARN, detail=f"用例 {count} 条（目标 ≥{MIN_CASES} 条）")
+    return Check(key="suite", name="评测用例库", status=STATUS_OK, detail=f"用例 {count} 条（schema 校验见 aisentinel eval validate）")
 
 
 def check_disk(base: Path) -> Check:
