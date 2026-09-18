@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+.aisentinel/
+*.log
+!docs/**/*.log
+# 模型权重与缓存（D 盘外置，不入库）
+models/
+.cache/
+_samples/

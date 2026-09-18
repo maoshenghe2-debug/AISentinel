@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/maoshenghe2-debug/AISentinel/schemas/label_record.schema.json",
+  "title": "AISentinel LabelCheckRecord（标识核验记录）",
+  "type": "object",
+  "required": ["schema_version", "file", "sha256", "size", "format", "verdict", "confidence", "groups", "traces", "standard_refs", "checked_at"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "file": { "type": "string" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "size": { "type": "integer", "minimum": 0 },
+    "format": { "type": "string" },
+    "verdict": { "enum": ["has_label", "suspected_cleaned", "no_label"] },
+    "confidence": { "enum": ["high", "medium", "low"] },
+    "groups": {
+      "type": "object",
+      "required": ["provider", "synthesis", "content_id"],
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["group", "field", "value_preview", "source"],
+          "properties": {
+            "group": { "type": "string" },
+            "field": { "type": "string" },
+            "value_preview": { "type": "string" },
+            "source": { "type": "string" }
+          }
+        }
+      }
+    },
+    "traces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "detail"],
+        "properties": {
+          "kind": { "type": "string" },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+    "standard_refs": { "type": "array", "items": { "type": "string" } },
+    "checked_at": { "type": "string" }
+  }
+}
