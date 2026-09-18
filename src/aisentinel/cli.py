@@ -139,6 +139,88 @@ def detect_dir(
     console.print(f"CSV 证据：[bold]{out}[/bold]")
 
 
+eval_app = typer.Typer(help="红队安全评测（用例库 / 执行器 / 双轨评分 / 风险矩阵）", no_args_is_help=True)
+app.add_typer(eval_app, name="eval")
+
+
+@eval_app.command("run")
+def eval_run(
+    model: str = typer.Option("mock://", "--model", help="模型规格：mock:// / ollama:<模型> / openai:<模型>"),
+    limit: int = typer.Option(None, "--limit", help="只跑前 N 条（冒烟）"),
+    concurrency: int = typer.Option(4, "--concurrency", min=1, max=32, help="并发数"),
+    out: str = typer.Option("eval_report.html", "--out", help="报告输出路径（同时产出 .html 与 .md）"),
+    judge_model: str = typer.Option(None, "--judge", help="启用裁判模型（默认关闭；启用后评测数据将发送至对应端点）"),
+    as_json: bool = typer.Option(False, "--json", help="输出运行摘要 JSON"),
+) -> None:
+    """执行一轮评测：用例库 → 执行器 → 双轨评分 → 风险矩阵报告。"""
+    from .eval.executor import run_eval
+    from .eval.models import get_adapter
+    from .eval.report import write_report
+    from .eval.suite import load_suite
+
+    try:
+        cases = load_suite()
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=4) from exc
+    if not cases:
+        console.print("[yellow]用例库为空（eval/suites/ 下暂无用例）[/yellow]")
+        raise typer.Exit(code=4)
+
+    try:
+        adapter = get_adapter(model)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from exc
+
+    judge = None
+    if judge_model:
+        judge = get_adapter(judge_model)
+        console.print(f"[yellow]裁判模型已启用：{judge.name} —— 评测数据将发送至对应端点，请确认合规后再继续。[/yellow]")
+
+    console.print(f"评测开始：{len(cases)} 条用例 ｜ 模型 {adapter.name} ｜ 并发 {concurrency}")
+
+    def progress(done: int, total: int, case_id: str) -> None:
+        if done % max(1, total // 10) == 0 or done == total:
+            console.print(f"  进度 {done}/{total}（{case_id}）")
+
+    run = run_eval(cases, adapter, limit=limit, concurrency=concurrency, judge=judge, progress=progress)
+    summary = run["summary"]
+    html_path, md_path = write_report(run, out)
+
+    table = Table(title=f"评测结果 · {run['model']} · 风险分 {summary['risk_score']}/100")
+    table.add_column("指标", no_wrap=True)
+    table.add_column("值", justify="right")
+    table.add_row("用例总数", str(summary["total"]))
+    table.add_row("通过 / 失败 / 部分 / 错误", f"{summary['pass']} / {summary['fail']} / {summary['partial']} / {summary['error']}")
+    table.add_row("OWASP 覆盖", f"{len(summary['by_owasp'])} 类")
+    console.print(table)
+    console.print(f"报告：[bold]{html_path}[/bold]（Markdown：{md_path}）")
+    if as_json:
+        console.print_json(jsonlib.dumps({key: run[key] for key in ("run_id", "model", "summary")}, ensure_ascii=False))
+
+
+@eval_app.command("validate")
+def eval_validate() -> None:
+    """校验用例库（schema + 计数统计）。"""
+    from .eval.suite import CATEGORY_TITLES as EVAL_TITLES
+    from .eval.suite import load_suite, suite_stats
+
+    try:
+        cases = load_suite()
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=4) from exc
+    stats = suite_stats(cases)
+    table = Table(title=f"用例库校验通过 · 共 {stats['total']} 条")
+    table.add_column("类别")
+    table.add_column("数量", justify="right")
+    for category, count in sorted(stats["by_category"].items()):
+        table.add_row(EVAL_TITLES.get(category, category), str(count))
+    console.print(table)
+    console.print(f"OWASP 覆盖：{', '.join(sorted(stats['by_owasp']))}")
+
+
 def main() -> None:
     app()
 
