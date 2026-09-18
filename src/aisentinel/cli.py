@@ -221,6 +221,76 @@ def eval_validate() -> None:
     console.print(f"OWASP 覆盖：{', '.join(sorted(stats['by_owasp']))}")
 
 
+guard_app = typer.Typer(help="运行时护栏（输入注入检测 / 输出 PII 脱敏 / 违规拦截）", no_args_is_help=True)
+app.add_typer(guard_app, name="guard")
+
+
+@guard_app.command("check")
+def guard_check(
+    text: str = typer.Option(..., "--text", help="待检测文本"),
+    stage: str = typer.Option("input", "--stage", help="检测阶段：input / output"),
+    policy: str = typer.Option(None, "--policy", help="策略文件路径（默认内置 default.yaml）"),
+    as_json: bool = typer.Option(False, "--json", help="输出 JSON"),
+) -> None:
+    """单文本护栏检测（用于联调 / 演示）。"""
+    from .guard.engine import Guard
+
+    guard = Guard(policy)
+    decision = guard.check_input(text) if stage == "input" else guard.check_output(text)
+    color = {"allow": "green", "alert": "yellow", "mask": "yellow", "block": "red"}.get(decision.action, "white")
+    console.print(f"[{color}]{decision.action}[/{color}] · 阶段 {decision.stage} · 命中 {len(decision.hits)} 条")
+    for hit in decision.hits:
+        console.print(f"  · {hit['rule']}（{hit['category']}）命中：{hit['match']}")
+    if decision.action == "mask":
+        console.print(f"脱敏结果：{decision.text}")
+    if decision.action == "block":
+        console.print(f"拦截文案：{decision.text}")
+    if as_json:
+        console.print_json(jsonlib.dumps({"decision": decision.to_dict(), "text": decision.text}, ensure_ascii=False))
+
+
+@guard_app.command("bench")
+def guard_bench(
+    repeats: int = typer.Option(20, "--repeats", min=1, max=500, help="延迟测评重复次数"),
+    policy: str = typer.Option(None, "--policy", help="策略文件路径"),
+    as_json: bool = typer.Option(False, "--json", help="输出 JSON"),
+) -> None:
+    """基准测评：拦截率 / 误报率 / P95 延迟。"""
+    from .guard.bench import run_bench
+    from .guard.engine import Guard
+
+    metrics = run_bench(Guard(policy), repeats=repeats)
+    table = Table(title="护栏基准测评（固定样本集）")
+    table.add_column("指标", no_wrap=True)
+    table.add_column("值", justify="right")
+    table.add_row("样本（正 / 负）", f"{metrics['positives']} / {metrics['negatives']}")
+    table.add_row("拦截率", f"{metrics['hit_rate'] * 100:.1f}%")
+    table.add_row("误报率", f"{metrics['false_positive_rate'] * 100:.1f}%")
+    table.add_row("P95 延迟", f"{metrics['latency_p95_ms']} ms")
+    table.add_row("平均延迟", f"{metrics['latency_avg_ms']} ms")
+    console.print(table)
+    if as_json:
+        console.print_json(jsonlib.dumps(metrics, ensure_ascii=False))
+
+
+@guard_app.command("serve")
+def guard_serve(
+    host: str = typer.Option(None, "--host", help="监听地址（默认取策略 bind=127.0.0.1）"),
+    port: int = typer.Option(8877, "--port", help="监听端口"),
+    upstream: str = typer.Option("mock://", "--upstream", help="上游：mock:// / ollama:<模型>"),
+    policy: str = typer.Option(None, "--policy", help="策略文件路径"),
+) -> None:
+    """启动护栏代理（OpenAI 兼容；默认仅监听 127.0.0.1）。"""
+    import uvicorn
+
+    from .guard.engine import Guard
+    from .guard.proxy import create_app
+
+    bind = host or Guard(policy).bind
+    console.print(f"护栏代理启动：http://{bind}:{port}（upstream={upstream}）")
+    uvicorn.run(create_app(policy, upstream), host=bind, port=port, log_level="warning")
+
+
 def main() -> None:
     app()
 

@@ -1,0 +1,79 @@
+# AISentinel 护栏策略（v1.0 规则档）
+# 安全默认值：bind 127.0.0.1（仅本机监听）；日志不落原文；零遥测。
+# action 语义：block=拦截（拒绝应答）· mask=脱敏（替换为 [已脱敏]）· alert=放行但标记 · allow=放行
+version: "1.0"
+bind: "127.0.0.1"
+
+input:
+  - id: inj-override
+    category: prompt_injection
+    action: block
+    description: 指令覆盖/忽略类注入（中英文）
+    pattern: '(?i)(ignore\s+(all\s+)?(previous|prior|above)\s+instructions|忽略(以上|之前|前面|先前).{0,10}(所有)?的?.{0,6}指令)'
+
+  - id: inj-sysprompt
+    category: system_prompt_extraction
+    action: block
+    description: 系统提示词套取（带动词或所属格）
+    pattern: '(?i)((输出|复述|展示|告诉我|打印|泄露|查看|重复|拼出).{0,12}(系统提示词|system\s*prompt|初始(化)?指令|第一条(系统)?消息)|(你的|完整的|全部)(系统提示词|system\s*prompt))'
+
+  - id: inj-jailbreak
+    category: jailbreak
+    action: block
+    description: 越狱/角色扮演绕过框架
+    pattern: '(?i)(\bDAN\b\s*(模式|mode)?|jailbreak|越狱(模式)?|无限制模式|开发者模式|developer\s*mode|没有(任何)?限制的助手)'
+
+  - id: inj-encoded
+    category: prompt_injection
+    action: block
+    description: 编码载荷执行（base64 解码后执行）
+    pattern: '(?i)(base64).{0,24}(解码|decode).{0,16}(执行|运行|照做|run)'
+
+  - id: inj-delimiter
+    category: prompt_injection
+    action: block
+    description: 分隔符逃逸/伪造系统消息
+    pattern: '(?i)(\[/?(system|inst)\]|###\s*(system|instruction)|\{\{system\}\}|伪(造)?系统(消息|指令))'
+
+output:
+  - id: pii-phone
+    category: pii
+    action: mask
+    description: 手机号
+    pattern: '(?<!\d)1[3-9]\d{9}(?!\d)'
+
+  - id: pii-idcard
+    category: pii
+    action: mask
+    description: 身份证号（18 位）
+    pattern: '(?<!\d)\d{17}[\dXx](?!\d)'
+
+  - id: pii-bankcard
+    category: pii
+    action: mask
+    description: 银行卡号（16-19 位数字）
+    pattern: '(?<!\d)\d{16,19}(?!\d)'
+
+  - id: pii-email
+    category: pii
+    action: mask
+    description: 电子邮箱
+    pattern: '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+
+  - id: leak-canary
+    category: system_prompt_leak
+    action: block
+    description: 内部金丝雀串泄漏
+    pattern: 'AISENTINEL-CANARY'
+
+  - id: leak-sysprompt
+    category: system_prompt_leak
+    action: block
+    description: 输出侧系统提示词泄漏
+    pattern: '(?i)(我的系统提示词是|以下是(我的)?系统提示词|我的初始指令是)'
+
+  - id: violation-promo
+    category: violation
+    action: block
+    description: 违规宣传用语（稳赚不赔/包治百病等）
+    pattern: '(稳赚不赔|包治百病|内幕消息|保证收益|百分百有效)'
